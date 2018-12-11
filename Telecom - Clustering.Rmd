@@ -1,0 +1,133 @@
+---
+title: "Telecom Customer Clustering"
+output: html_notebook
+---
+
+This dataset records each individual customer information including address, phone charges, voicemail and churn.
+
+Since this R notebook aims to practice the algothrim of clustering, we are gonna cluster customer into homogeneous groups and compare within their group. Lets go!
+
+# Loading packages
+```{r}
+library(readr)
+library(dplyr)
+library(purrr)
+library(cluster)
+library(ggplot2)
+```
+
+# Loading datasets
+```{r}
+customer <- read_csv("/Users/jcao/OneDrive/Ryerson/CIND 119/Final Project/customer_churn/churn_full.csv")
+```
+# exam the structure dataset
+```{r}
+glimpse(customer)
+summary(customer)
+```
+
+# missing value inspection
+## Good news: we have no missing values.
+```{r}
+apply(customer, 2, function(x) sum(is.na(x)))
+```
+
+# To build a clustering algothrim, the approariate attributes need to be considered and specificed. Two steps will be performed. First, remove unnecessary attribute such Int'l Plan and Churn? and convert categorical into numerical. Second, we might need to scale the attributes.
+```{r}
+customer$`VMail Plan`<-ifelse(customer$`VMail Plan`=="yes",1,0)
+customer$`Int'l Plan`<-ifelse(customer$`Int'l Plan`=="yes",1,0)
+
+customer1<-customer %>%
+    select(-State,-`Area Code`,-Phone,-`Churn?`)
+
+summary(customer1)
+```
+
+# Check column means and standard deviations
+## The purpose of this step is determine if we need to scale the variables so that they are measured at the similar level of scales. In this dataset, we need to scale the data.
+```{r}
+colMeans(customer1)
+apply(customer1, 2, sd)
+```
+
+As you might know there are two common clustering algorithms, K-means and hierarchical clustering.
+
+But first thing first, here we need to determine the optimal # of clusters k. 
+
+## The k-means elbow plot
+```{r}
+tot_withinss<-map_dbl(1:10, function(k) {
+  model<-kmeans(scale(customer1),centers = k)
+  model$tot.withinss
+})
+
+elbow_df<-data.frame(
+  k=1:10,
+  tot_withinss=tot_withinss
+)
+
+ggplot(elbow_df,aes(x=k,y=tot_withinss)) +
+  geom_line() +
+  scale_x_continuous(breaks=1:10)
+```
+
+## Average silhouette widths
+```{r}
+sil_width<-map_dbl(2:10, function(k){
+  model<-pam(scale(customer1[,-18]), k = k)
+  model$silinfo$avg.width
+})
+
+sil_df<-data.frame(
+  k=2:10,
+  sil_width=sil_width
+)
+
+ggplot(sil_df,aes(x=k,y=sil_width))+
+  geom_line() +
+  scale_x_continuous(breaks = 2:10)
+```
+
+# K-means clustering with the optimal k of 2
+```{r}
+customer.km<-kmeans(scale(customer1), centers = 2, nstart = 20)
+customer1$kmeans<-customer.km$cluster
+
+customer1 %>%
+  group_by(kmeans)%>%
+  summarise_all(funs(mean(.)))
+```
+
+Cluster 1 has lower day mins, higher day charge
+# Hierarchical clustering with the optimal k of 2
+```{r}
+customer.dist<-dist(scale(customer1))
+customer.hclust<-hclust(customer.dist,method = "complete")
+plot(customer.hclust)
+customer.hclust.cluser<-cutree(customer.hclust,k=2)
+
+customer1$hierarchical<-customer.hclust.cluser
+customer1 %>%
+  group_by(hierarchical) %>%
+  summarise_all(funs(mean(.)))
+```
+
+
+# Conclusion
+First, we determined the optimal k of 2 which both methods agree on. Then we buit K-means and hierachical clustering to get 2 clusters of customers.
+
+For K-mean:
+Cluster 1(Unhappy and less frequent servies used customers): Lower total mins and call with higher Service calls
+Cluster 2(Frequent and Active service customers): Higher total mins and total charge
+
+
+For Hierarchical:
+Cluster 1: Higher min, charge and less service call
+Cluster 2: Tend to have shorter min of calls, more service call
+
+There is no right or wrong question. It will be tailored down to the business needs and requirements.
+
+# Future Work
+Couple things I could tackle are:
+1. PCA
+2. Feature Engineering
